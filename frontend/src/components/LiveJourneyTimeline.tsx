@@ -9,11 +9,12 @@ import {
   Train, 
   GraduationCap, 
   Footprints,
-  Radio
+  Radio,
+  Bus
 } from 'lucide-react';
 
 interface LiveJourneyTimelineProps {
-  currentStage: 'walking_to_stop' | 'waiting_for_bus' | 'on_bus' | 'transferring' | 'arrived';
+  currentStage: 'departed' | 'walking_to_stop' | 'waiting_for_bus' | 'on_bus' | 'transferring' | 'arrived';
   originName: string;
   busStopName: string;
   vehicle: TransitVehicle | null;
@@ -89,7 +90,7 @@ export const LiveJourneyTimeline: React.FC<LiveJourneyTimelineProps> = ({
               ? 'bg-rose-500/20 border-2 border-rose-400 text-rose-400 animate-pulse' 
               : 'bg-indigo-500/20 border-2 border-indigo-400 text-indigo-400'
           }`}>
-            <span className="text-xs">🚌</span>
+            <Bus className="w-3.5 h-3.5" />
           </div>
           <div className={`p-3.5 rounded-xl border transition-all ${
             isDelayed 

@@ -75,36 +75,96 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
       })
     : safeStops;
 
-  // Ultra-clean compact bus marker pill — avoids crowding/congestion on the map
+  // Clear, large bus marker with proper SVG bus silhouette
   const createBusIcon = (v: TransitVehicle, isSelected: boolean) => {
     const delayMin = v.delay_minutes ?? 0;
     const isDelayed = delayMin > 0;
-    const borderRing = isSelected ? 'ring-2 ring-cyan-300 scale-110' : '';
     const routeShort = v.route_short_name || (v.route_id ? v.route_id.replace('ROUTE-', '') : '15');
     const etaMin = v.eta_next_stop_min ?? (v as any).eta_minutes ?? 4;
     const routeColor = v.route_color || (routeShort === '15' ? '#06b6d4' : routeShort.includes('7B') ? '#10b981' : '#8b5cf6');
+    const statusColor = isDelayed ? '#ef4444' : '#22c55e';
+    const selectedRing = isSelected
+      ? `box-shadow: 0 0 0 3px ${routeColor}, 0 0 14px 4px ${routeColor}55;`
+      : '';
 
     return L.divIcon({
       className: 'live-bus-div-icon',
-      iconSize: [70, 28],
-      iconAnchor: [35, 14],
+      iconSize: [84, 46],
+      iconAnchor: [42, 23],
       html: `
-        <div class="cursor-pointer transition-all duration-200 ${borderRing}">
-          <div style="background-color: #0b0f19; border: 2px solid ${routeColor};"
-               class="px-2 py-0.5 rounded-full shadow-2xl flex items-center gap-1.5 backdrop-blur-md">
-            <span class="text-xs">🚌</span>
-            <span style="color: ${routeColor};" class="text-xs font-black tracking-tight">
-              ${routeShort}
-            </span>
-            <span class="text-[10px] font-bold text-white tracking-tight">
-              ${etaMin}m
-            </span>
-            <span class="w-1.5 h-1.5 rounded-full ${isDelayed ? 'bg-rose-500 animate-ping' : 'bg-emerald-400'}"></span>
+        <div style="
+          display: flex; flex-direction: column; align-items: center; gap: 2px;
+          cursor: pointer; transition: transform 0.15s;
+          ${isSelected ? 'transform: scale(1.15);' : ''}
+        ">
+          <!-- Bus body -->
+          <div style="
+            background: #0f172a;
+            border: 2px solid ${routeColor};
+            border-radius: 10px;
+            padding: 3px 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            ${selectedRing}
+          ">
+            <!-- SVG bus icon -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="2" y="5" width="20" height="13" rx="3" fill="${routeColor}" opacity="0.15" stroke="${routeColor}" stroke-width="1.5"/>
+              <rect x="4" y="8" width="4" height="3" rx="1" fill="${routeColor}" opacity="0.9"/>
+              <rect x="10" y="8" width="4" height="3" rx="1" fill="${routeColor}" opacity="0.9"/>
+              <rect x="16" y="8" width="3" height="3" rx="1" fill="${routeColor}" opacity="0.9"/>
+              <line x1="2" y1="13" x2="22" y2="13" stroke="${routeColor}" stroke-width="1" opacity="0.5"/>
+              <circle cx="6.5" cy="19" r="2" fill="#1e293b" stroke="${routeColor}" stroke-width="1.5"/>
+              <circle cx="17.5" cy="19" r="2" fill="#1e293b" stroke="${routeColor}" stroke-width="1.5"/>
+              <line x1="2" y1="5" x2="2" y2="18" stroke="${routeColor}" stroke-width="1.5"/>
+              <line x1="22" y1="5" x2="22" y2="18" stroke="${routeColor}" stroke-width="1.5"/>
+            </svg>
+            <!-- Route number -->
+            <span style="
+              color: ${routeColor};
+              font-size: 13px;
+              font-weight: 900;
+              font-family: system-ui, sans-serif;
+              letter-spacing: -0.5px;
+              line-height: 1;
+            ">${routeShort}</span>
+            <!-- ETA badge -->
+            <div style="
+              background: ${isDelayed ? '#450a0a' : '#0c1a0c'};
+              border: 1px solid ${statusColor};
+              border-radius: 5px;
+              padding: 1px 5px;
+              display: flex;
+              align-items: center;
+              gap: 3px;
+            ">
+              <div style="
+                width: 6px; height: 6px; border-radius: 50%;
+                background: ${statusColor};
+                ${!isDelayed ? 'animation: pulse 1.5s infinite;' : ''}
+              "></div>
+              <span style="
+                color: white;
+                font-size: 11px;
+                font-weight: 700;
+                font-family: system-ui, sans-serif;
+              ">${etaMin}m</span>
+            </div>
           </div>
+          <!-- Pointer triangle -->
+          <div style="
+            width: 0; height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid ${routeColor};
+            margin-top: -1px;
+          "></div>
         </div>
       `
     });
   };
+
 
   // Bus Stop DivIcon
   const createStopIcon = (stop: TransitStop, isSelected: boolean) => {
