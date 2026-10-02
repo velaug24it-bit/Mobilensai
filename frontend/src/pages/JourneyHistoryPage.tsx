@@ -23,7 +23,7 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { useApp } from '../context/AppContext';
-import { PERSONAL_HISTORY_DATA, TCR_TO_FXEC_JOURNEY, CANONICAL_61MIN_JOURNEY } from '../data/mockData';
+import { PERSONAL_HISTORY_DATA, TCR_TO_FXEC_JOURNEY } from '../data/mockData';
 
 export const JourneyHistoryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -31,26 +31,11 @@ export const JourneyHistoryPage: React.FC = () => {
 
   const savedJourneys = [
     {
-      id: 'J-CANONICAL-61MIN',
-      title: 'Morning College Commute (Canonical)',
-      origin: 'Greenwood Heights (Home)',
-      destination: 'City Technology Institute',
-      date: 'Today, Oct 02 • 08:00 AM',
-      durationMinutes: 61,
-      walkingMinutes: 12,
-      waitingMinutes: 15,
-      frictionScore: 72,
-      riskLevel: 'Elevated Risk Area (Zone 17)',
-      primaryBottleneck: 'Bus ➔ Train Transfer Mismatch',
-      costInr: 35,
-      journeyRef: CANONICAL_61MIN_JOURNEY
-    },
-    {
       id: 'J-TCR-FXEC-2026',
       title: 'TCR Airport ➔ FXEC Engineering Corridor',
       origin: 'Thoothukudi Airport (TCR), Vagaikulam',
-      destination: 'Francis Xavier Engineering College, Tirunelveli',
-      date: 'Yesterday, Oct 01 • 08:15 AM',
+      destination: 'Francis Xavier Engineering College, Vannarpettai',
+      date: 'Today, Oct 02 • 08:15 AM',
       durationMinutes: 78,
       walkingMinutes: 15,
       waitingMinutes: 19,
@@ -61,19 +46,34 @@ export const JourneyHistoryPage: React.FC = () => {
       journeyRef: TCR_TO_FXEC_JOURNEY
     },
     {
-      id: 'J-SHELTERED-ALT',
-      title: 'Alternative Sheltered Footway Route',
-      origin: 'Greenwood Heights (Home)',
-      destination: 'City Technology Institute',
-      date: 'Sep 30 • 08:05 AM',
-      durationMinutes: 53,
-      walkingMinutes: 14,
-      waitingMinutes: 5,
-      frictionScore: 46,
-      riskLevel: 'Low Risk (Protected Overpass)',
-      primaryBottleneck: 'None (Synchronized Transfer)',
-      costInr: 35,
-      journeyRef: CANONICAL_61MIN_JOURNEY
+      id: 'J-PAL-FXEC-2026',
+      title: 'Palayamkottai ➔ FXEC Campus Express',
+      origin: 'Palayamkottai Bus Stand, Tirunelveli',
+      destination: 'Francis Xavier Engineering College, Vannarpettai',
+      date: 'Yesterday, Oct 01 • 08:30 AM',
+      durationMinutes: 28,
+      walkingMinutes: 8,
+      waitingMinutes: 6,
+      frictionScore: 39,
+      riskLevel: 'Low Risk (Sheltered Corridor)',
+      primaryBottleneck: 'Minor Signal Delay at North Bypass',
+      costInr: 20,
+      journeyRef: TCR_TO_FXEC_JOURNEY
+    },
+    {
+      id: 'J-NBS-FXEC-2026',
+      title: 'Tirunelveli New Bus Stand (NBS) ➔ FXEC Route',
+      origin: 'Tirunelveli New Bus Stand (NBS)',
+      destination: 'Francis Xavier Engineering College, Vannarpettai',
+      date: 'Sep 30 • 08:10 AM',
+      durationMinutes: 34,
+      walkingMinutes: 9,
+      waitingMinutes: 8,
+      frictionScore: 44,
+      riskLevel: 'Moderate Crossing Risk',
+      primaryBottleneck: 'Vannarpettai East Highway Crossing',
+      costInr: 25,
+      journeyRef: TCR_TO_FXEC_JOURNEY
     }
   ];
 

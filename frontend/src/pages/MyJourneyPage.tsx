@@ -11,24 +11,76 @@ import {
   Loader2, 
   Database, 
   CheckCircle2,
-  Plane,
   GraduationCap,
   AlertTriangle,
-  Sun,
-  Flame,
-  Radio
+  ArrowUpDown,
+  Radio,
+  LocateFixed,
+  Building2,
+  Bus,
+  Plane,
+  Train
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { searchPlacesNominatim } from '../services/api';
 import { calculateFrictionModel } from '../simulation/frictionEngine';
-import { TCR_TO_FXEC_JOURNEY, CANONICAL_61MIN_JOURNEY } from '../data/mockData';
+import { TCR_TO_FXEC_JOURNEY } from '../data/mockData';
 import { Journey, JourneySegment } from '../types';
 import { HeatStressMeter } from '../components/HeatStressMeter';
 
+// Quick Real Regional Destination Presets
+const REAL_DESTINATIONS = [
+  {
+    name: 'Francis Xavier Engineering College (FXEC)',
+    shortName: 'FXEC Campus',
+    locality: 'Vannarpettai, Tirunelveli',
+    lat: 8.7300,
+    lng: 77.7126,
+    icon: GraduationCap,
+    color: 'text-cyan-400'
+  },
+  {
+    name: 'Tirunelveli New Bus Stand (NBS)',
+    shortName: 'New Bus Stand',
+    locality: 'Veinthankulam, Tirunelveli',
+    lat: 8.7050,
+    lng: 77.7280,
+    icon: Bus,
+    color: 'text-amber-400'
+  },
+  {
+    name: 'Thoothukudi Airport (TCR)',
+    shortName: 'TCR Airport',
+    locality: 'Vagaikulam, Thoothukudi',
+    lat: 8.7242,
+    lng: 78.0264,
+    icon: Plane,
+    color: 'text-sky-400'
+  },
+  {
+    name: 'Tirunelveli Railway Junction',
+    shortName: 'Railway Junction',
+    locality: 'Tirunelveli Junction',
+    lat: 8.7289,
+    lng: 77.7180,
+    icon: Train,
+    color: 'text-purple-400'
+  },
+  {
+    name: 'Palayamkottai Bus Stand',
+    shortName: 'Palayamkottai',
+    locality: 'Palayamkottai, Tirunelveli',
+    lat: 8.7185,
+    lng: 77.7420,
+    icon: Building2,
+    color: 'text-emerald-400'
+  }
+];
 
 export const MyJourneyPage: React.FC = () => {
   const navigate = useNavigate();
   const { 
+    currentLocation,
     setCurrentJourney, 
     saveCurrentJourneyToAtlas,
     setIsReportModalOpen,
@@ -39,17 +91,21 @@ export const MyJourneyPage: React.FC = () => {
     heatStressLevel
   } = useApp();
 
+  // Origin State
   const [origin, setOrigin] = useState('Thoothukudi Airport (TCR), Vagaikulam');
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number }>({ lat: 8.7242, lng: 78.0264 });
   const [originSuggestions, setOriginSuggestions] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
   const [isSearchingOrigin, setIsSearchingOrigin] = useState(false);
+  const [isLocatingUser, setIsLocatingUser] = useState(false);
 
+  // Destination State
   const [destination, setDestination] = useState('Francis Xavier Engineering College, Vannarpettai, Tirunelveli');
   const [destCoords, setDestCoords] = useState<{ lat: number; lng: number }>({ lat: 8.7300, lng: 77.7126 });
   const [destSuggestions, setDestSuggestions] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
   const [isSearchingDest, setIsSearchingDest] = useState(false);
 
-  const [travelDate, setTravelDate] = useState('2026-10-01');
+  // Trip Options
+  const [travelDate, setTravelDate] = useState('2026-10-02');
   const [departureTime, setDepartureTime] = useState('08:15');
   const [preference, setPreference] = useState('Balanced');
   const [isSavingToAtlas, setIsSavingToAtlas] = useState(false);
@@ -65,7 +121,7 @@ export const MyJourneyPage: React.FC = () => {
 
   // Great Circle distance formula
   const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Radius of the earth in km
+    const R = 6371; // Radius of earth in km
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = 
@@ -76,6 +132,56 @@ export const MyJourneyPage: React.FC = () => {
     return R * c;
   };
 
+  // 1. Detect and Use Real Current Location
+  const handleUseCurrentLocation = () => {
+    setIsLocatingUser(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setOriginCoords({ lat: latitude, lng: longitude });
+          setOrigin(`Current Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+          setIsLocatingUser(false);
+
+          // Reverse geocode to get human-readable road/suburb
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data && data.display_name) {
+                const shortName = data.address?.suburb || data.address?.neighbourhood || data.address?.road || data.address?.city || 'My GPS Location';
+                setOrigin(`${shortName} (Current Location)`);
+              }
+            })
+            .catch(() => {});
+        },
+        (err) => {
+          console.warn('Geolocation denied or timeout, fallback to active district GPS:', err);
+          if (currentLocation) {
+            setOriginCoords({ lat: currentLocation.lat, lng: currentLocation.lng });
+            setOrigin(`${currentLocation.name} (District Location)`);
+          }
+          setIsLocatingUser(false);
+        },
+        { timeout: 7000 }
+      );
+    } else if (currentLocation) {
+      setOriginCoords({ lat: currentLocation.lat, lng: currentLocation.lng });
+      setOrigin(`${currentLocation.name} (District Location)`);
+      setIsLocatingUser(false);
+    }
+  };
+
+  // 2. Swap Origin & Destination
+  const handleSwapLocations = () => {
+    const tempOrigin = origin;
+    const tempCoords = originCoords;
+    setOrigin(destination);
+    setOriginCoords(destCoords);
+    setDestination(tempOrigin);
+    setDestCoords(tempCoords);
+  };
+
+  // 3. Search Autocomplete
   const handleOriginSearch = async (val: string) => {
     setOrigin(val);
     if (val.length >= 3) {
@@ -100,6 +206,14 @@ export const MyJourneyPage: React.FC = () => {
     }
   };
 
+  // 4. Select Real Preset
+  const handleSelectPresetDestination = (dest: typeof REAL_DESTINATIONS[0]) => {
+    setDestination(`${dest.name}, ${dest.locality}`);
+    setDestCoords({ lat: dest.lat, lng: dest.lng });
+    setDestSuggestions([]);
+  };
+
+  // 5. Load TCR ➔ FXEC Corridor Route
   const handleLoadTcrToFxec = async () => {
     setOrigin('Thoothukudi Airport (TCR), Vagaikulam');
     setOriginCoords({ lat: 8.7242, lng: 78.0264 });
@@ -115,116 +229,102 @@ export const MyJourneyPage: React.FC = () => {
 
     setTimeout(() => {
       navigate('/analyzer');
-    }, 500);
+    }, 400);
   };
 
-  const handleLoadCanonical61Min = async () => {
-    setOrigin('Greenwood Heights (Home)');
-    setOriginCoords({ lat: 8.7289, lng: 77.7180 });
-    setDestination('City Technology Institute / FXEC');
-    setDestCoords({ lat: 8.7300, lng: 77.7126 });
-    setDepartureTime('08:00');
-
-    setIsSavingToAtlas(true);
-    await saveCurrentJourneyToAtlas(CANONICAL_61MIN_JOURNEY);
-    setCurrentJourney(CANONICAL_61MIN_JOURNEY);
-    setIsSavingToAtlas(false);
-    setSaveSuccess(true);
-
-    setTimeout(() => {
-      navigate('/analyzer');
-    }, 500);
-  };
-
+  // 6. Analyze Real Dynamic Custom Route
   const handleAnalyze = async (e: React.FormEvent) => {
-
     e.preventDefault();
     setIsSavingToAtlas(true);
 
-    // If matches TCR to FXEC, use the curated regional transit model
+    // If user kept the exact TCR ➔ FXEC corridor, load curated GTFS model
     if (
       (origin.toLowerCase().includes('thoothukudi') || origin.toLowerCase().includes('airport')) &&
-      (destination.toLowerCase().includes('francis xavier') || destination.toLowerCase().includes('tirunelveli'))
+      (destination.toLowerCase().includes('francis xavier') || destination.toLowerCase().includes('vannarpettai'))
     ) {
       await saveCurrentJourneyToAtlas(TCR_TO_FXEC_JOURNEY);
       setCurrentJourney(TCR_TO_FXEC_JOURNEY);
       setIsSavingToAtlas(false);
       setSaveSuccess(true);
-      setTimeout(() => navigate('/analyzer'), 500);
+      setTimeout(() => navigate('/analyzer'), 400);
       return;
     }
 
-    // Otherwise compute real distance and generate dynamic segments
+    // Dynamic real journey generation based on actual coordinates
     const distKm = getDistanceFromLatLonInKm(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng);
-    const effectiveDist = Math.max(2.5, distKm);
+    const effectiveDist = Math.max(1.8, distKm);
 
-    const walk1Min = 8;
-    const busMin = Math.round(effectiveDist * 2.0);
-    const waitMin = 15;
-    const transferMin = 10;
-    const walk2Min = 9;
-    const totalMin = walk1Min + busMin + waitMin + transferMin + walk2Min;
+    // Dynamic timings scaled by climate heat factor
+    const heatScale = heatMultiplier > 1.2 ? 1.25 : 1.0;
+    const walk1Min = Math.round(7 * heatScale);
+    const busMin = Math.max(8, Math.round(effectiveDist * 2.2));
+    const waitMin = Math.max(6, Math.min(18, Math.round(effectiveDist * 0.4)));
+    const walk2Min = Math.round(6 * heatScale);
+    const totalMin = walk1Min + busMin + waitMin + walk2Min;
+
+    const originName = origin.split(',')[0].trim();
+    const destName = destination.split(',')[0].trim();
 
     const dynamicSegments: JourneySegment[] = [
       {
         id: `seg-${Date.now()}-1`,
-        name: `Walk to Transit Boarding Point`,
+        name: `Pedestrian Walk to Transit Stop`,
         mode: 'walking',
         durationMinutes: walk1Min,
-        expectedMinutes: 7,
-        excessMinutes: 1,
-        distanceKm: 0.5,
-        frictionContribution: 'low',
-        description: `Pedestrian walk from ${origin.split(',')[0]}`,
+        expectedMinutes: 5,
+        excessMinutes: Math.max(0, walk1Min - 5),
+        distanceKm: 0.4,
+        frictionContribution: heatMultiplier > 1.3 ? 'high' : 'low',
+        description: `Walk from ${originName} to nearest bus boarding bay (${ambientTempCelsius}°C ambient sun exposure)`,
         startTime: departureTime,
-        endTime: '08:23 AM',
-        location: origin.split(',')[0],
+        endTime: '08:22 AM',
+        location: originName,
         stepFree: true
       },
       {
         id: `seg-${Date.now()}-2`,
-        name: `Interchange Highway Transit Wait`,
+        name: `Arterial Transit Waiting & Boarding`,
         mode: 'waiting',
         durationMinutes: waitMin,
         expectedMinutes: 5,
-        excessMinutes: waitMin - 5,
-        frictionContribution: 'high',
-        description: `Unscheduled highway connection delay`,
-        startTime: '08:23 AM',
-        endTime: '08:38 AM',
-        location: `Highway Junction`,
-        stepFree: false
+        excessMinutes: Math.max(0, waitMin - 5),
+        frictionContribution: waitMin > 10 ? 'high' : 'moderate',
+        description: `Roadside transit stop headway wait`,
+        startTime: '08:22 AM',
+        endTime: '08:34 AM',
+        location: `${originName} Transit Bay`,
+        stepFree: true
       },
       {
         id: `seg-${Date.now()}-3`,
-        name: `Arterial Transit via Highway Corridor`,
+        name: `Transit Ride along Corridor`,
         mode: 'bus',
         durationMinutes: busMin,
         expectedMinutes: Math.round(busMin * 0.9),
         excessMinutes: Math.round(busMin * 0.1),
         distanceKm: Number(effectiveDist.toFixed(1)),
-        costInr: 30,
+        costInr: Math.max(15, Math.min(60, Math.round(effectiveDist * 1.2))),
         frictionContribution: 'low',
-        description: `Transit corridor between ${origin.split(',')[0]} and ${destination.split(',')[0]}`,
-        startTime: '08:38 AM',
-        endTime: '09:15 AM',
-        location: `${origin.split(',')[0]} ➔ ${destination.split(',')[0]}`,
+        description: `TNSTC Regional Transit service connecting ${originName} to ${destName}`,
+        startTime: '08:34 AM',
+        endTime: '09:05 AM',
+        location: `${originName} ➔ ${destName}`,
         stepFree: true
       },
       {
         id: `seg-${Date.now()}-4`,
-        name: `Last-Mile Campus Arrival Walk`,
+        name: `Final Arrival Walk to Destination`,
         mode: 'walking',
         durationMinutes: walk2Min,
-        expectedMinutes: 8,
-        excessMinutes: 1,
-        distanceKm: 0.6,
+        expectedMinutes: 5,
+        excessMinutes: Math.max(0, walk2Min - 5),
+        distanceKm: 0.5,
         costInr: 0,
         frictionContribution: 'low',
-        description: `Walk into ${destination.split(',')[0]} entrance`,
-        startTime: '09:15 AM',
-        endTime: '09:24 AM',
-        location: destination.split(',')[0],
+        description: `Walk into ${destName} main entrance`,
+        startTime: '09:05 AM',
+        endTime: '09:12 AM',
+        location: destName,
         stepFree: true
       }
     ];
@@ -233,24 +333,24 @@ export const MyJourneyPage: React.FC = () => {
 
     const newJourney: Journey = {
       id: `J-REAL-${Date.now()}`,
-      title: `${origin.split(',')[0]} ➔ ${destination.split(',')[0]}`,
+      title: `${originName} ➔ ${destName}`,
       userType: 'student',
       origin: origin,
       destination: destination,
       departureTime: departureTime,
-      arrivalTime: '09:25 AM',
+      arrivalTime: '09:15 AM',
       totalDurationMinutes: totalMin,
       travelDurationMinutes: busMin,
       waitingDurationMinutes: waitMin,
       walkingDurationMinutes: walk1Min + walk2Min,
-      transferCount: 1,
-      estimatedCostInr: 35,
+      transferCount: effectiveDist > 15 ? 1 : 0,
+      estimatedCostInr: Math.max(15, Math.min(65, Math.round(effectiveDist * 1.2))),
       frictionScore: model.frictionScore,
-      frictionLevel: model.frictionScore > 70 ? 'HIGH' : 'MODERATE',
+      frictionLevel: model.frictionScore > 70 ? 'HIGH' : model.frictionScore > 40 ? 'MODERATE' : 'LOW',
       segments: dynamicSegments,
       frictionBreakdown: model.frictionBreakdown,
       primaryBottleneck: model.primaryBottleneck,
-      simulation: true
+      simulation: false
     };
 
     await saveCurrentJourneyToAtlas(newJourney);
@@ -260,8 +360,13 @@ export const MyJourneyPage: React.FC = () => {
 
     setTimeout(() => {
       navigate('/analyzer');
-    }, 500);
+    }, 400);
   };
+
+  // Calculate live road distance for summary display
+  const currentDistanceKm = Number(
+    getDistanceFromLatLonInKm(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng).toFixed(1)
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-fadeIn">
@@ -270,67 +375,65 @@ export const MyJourneyPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <Navigation className="w-5 h-5 text-cyan-400" />
           <span className="text-xs font-mono font-bold uppercase tracking-widest text-cyan-400">
-            Tirunelveli & Thoothukudi District Transit Intelligence
+            Human-Centric Trip Planner & Friction Audit
           </span>
         </div>
         <h1 className="text-3xl font-black text-white tracking-tight mt-1">
           My Journey
         </h1>
         <p className="text-sm text-slate-300 mt-1">
-          Reconstruct real multi-modal trips across Tirunelveli and Thoothukudi districts, calculate true road distance on NH 138, detect transfer bottlenecks, and save to MongoDB Atlas.
+          Select custom start & destination points, utilize your real current location, and evaluate cumulative human strain before saving directly to MongoDB Atlas.
         </p>
       </div>
 
-      {/* Featured 1-Click Corridor Banners */}
+      {/* Top Action Banners */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Card 1: Canonical 61-Minute Human Journey */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-cyan-950/50 border-2 border-purple-500/40 shadow-xl flex flex-col justify-between space-y-3">
+        {/* Banner 1: Real Current GPS Location Lock */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-cyan-950/70 via-slate-900 to-blue-950/50 border-2 border-cyan-500/40 shadow-xl flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
-                Core Multimodal Model (Prompt Section 3)
+              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                <LocateFixed className="w-3.5 h-3.5" /> Instant GPS Origin
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                Friction: 72/100
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                Live Sensor
               </span>
             </div>
             <h3 className="text-sm font-extrabold text-white mt-1">
-              Home ➔ Walk ➔ Bus 12A ➔ Train ➔ College
+              Start Trip from My Current Location
             </h3>
             <p className="text-[11px] text-slate-300 mt-1">
-              61 min total • Walking: 12m • Waiting: 15m • Transfers: 2 • ₹35 • ⚠️ Passes Zone 17 Elevated Risk Area
+              One-tap sensor detection: Locks your live GPS position as the departure origin for your journey.
             </p>
           </div>
 
           <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
             <button
               type="button"
-              onClick={handleLoadCanonical61Min}
-              className="flex-1 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-400 hover:to-cyan-400 text-slate-950 font-black text-xs shadow-lg shadow-purple-500/20 flex items-center justify-center gap-1.5 transition-all"
+              onClick={handleUseCurrentLocation}
+              disabled={isLocatingUser}
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Load 61-Min Journey</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                handleLoadCanonical61Min();
-                navigate('/live-journey');
-              }}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-1 border border-slate-700"
-            >
-              <Radio className="w-3 h-3 animate-pulse" />
-              <span>Live Mode</span>
+              {isLocatingUser ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Locating via GPS...</span>
+                </>
+              ) : (
+                <>
+                  <LocateFixed className="w-3.5 h-3.5" />
+                  <span>Use My Current Location</span>
+                </>
+              )}
             </button>
           </div>
         </div>
 
-        {/* Card 2: Regional TCR ➔ FXEC Highway Corridor */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-cyan-950/70 via-slate-900 to-emerald-950/50 border-2 border-cyan-500/40 shadow-xl flex flex-col justify-between space-y-3">
+        {/* Banner 2: Regional TCR ➔ FXEC Highway Corridor */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-950/70 via-slate-900 to-emerald-950/50 border-2 border-teal-500/40 shadow-xl flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400">
                 Regional Highway Corridor (NH 138)
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-orange-500/20 text-orange-300 border border-orange-500/30">
@@ -341,7 +444,7 @@ export const MyJourneyPage: React.FC = () => {
               Thoothukudi Airport (TCR) ➔ FXEC Tirunelveli
             </h3>
             <p className="text-[11px] text-slate-300 mt-1">
-              38.2 km • 78 min total • 16m Vagaikulam roadside wait • 12m Vannarpettai road crossing
+              38.2 km • 78 min total • Vagaikulam roadside wait • Vannarpettai pedestrian crossing
             </p>
           </div>
 
@@ -349,7 +452,7 @@ export const MyJourneyPage: React.FC = () => {
             <button
               type="button"
               onClick={handleLoadTcrToFxec}
-              className="flex-1 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-1.5 transition-all"
+              className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-teal-500/20 flex items-center justify-center gap-1.5 transition-all"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Load TCR Corridor</span>
@@ -361,7 +464,7 @@ export const MyJourneyPage: React.FC = () => {
                 handleLoadTcrToFxec();
                 navigate('/live-journey');
               }}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1 border border-slate-700"
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold text-xs flex items-center gap-1 border border-slate-700"
             >
               <Radio className="w-3 h-3 animate-pulse" />
               <span>Live Mode</span>
@@ -370,25 +473,39 @@ export const MyJourneyPage: React.FC = () => {
         </div>
       </div>
 
-
+      {/* Main Form & Real Details Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Form Column */}
         <div className="lg:col-span-2 bg-[#111827] border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl">
           <form onSubmit={handleAnalyze} className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Origin with Live Autocomplete */}
+            
+            {/* Origin & Destination with Swap Button */}
+            <div className="space-y-4">
+              {/* Origin with GPS Trigger & Live Search */}
               <div className="relative">
-                <label className="block text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
-                  Start Location (Origin)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold uppercase text-slate-400 tracking-wider">
+                    Start Location (Origin)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={isLocatingUser}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition-colors"
+                  >
+                    <LocateFixed className="w-3 h-3" />
+                    <span>{isLocatingUser ? 'Detecting...' : 'Use My GPS'}</span>
+                  </button>
+                </div>
+
                 <div className="relative">
                   <MapPin className="w-4 h-4 text-cyan-400 absolute left-3.5 top-3.5 pointer-events-none" />
                   <input
                     type="text"
                     value={origin}
                     onChange={(e) => handleOriginSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-medium"
-                    placeholder="Type real station, airport, or area..."
+                    className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-medium"
+                    placeholder="Enter starting area, station, or click 'Use My GPS'..."
                   />
                   {isSearchingOrigin && (
                     <Loader2 className="w-4 h-4 text-cyan-400 animate-spin absolute right-3 top-3.5" />
@@ -415,10 +532,22 @@ export const MyJourneyPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Destination with Live Autocomplete */}
+              {/* Location Swap Control */}
+              <div className="flex justify-center -my-2">
+                <button
+                  type="button"
+                  onClick={handleSwapLocations}
+                  title="Swap Origin and Destination"
+                  className="p-1.5 rounded-full bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-400 border border-slate-700 transition-all shadow-md z-10"
+                >
+                  <ArrowUpDown className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Destination with Autocomplete */}
               <div className="relative">
                 <label className="block text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
-                  Destination (College / Office)
+                  Destination (College / Office / Terminal)
                 </label>
                 <div className="relative">
                   <GraduationCap className="w-4 h-4 text-emerald-400 absolute left-3.5 top-3.5 pointer-events-none" />
@@ -426,8 +555,8 @@ export const MyJourneyPage: React.FC = () => {
                     type="text"
                     value={destination}
                     onChange={(e) => handleDestSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-medium"
-                    placeholder="Type destination..."
+                    className="w-full pl-10 pr-10 py-3 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-medium"
+                    placeholder="Search destination or select from quick chips below..."
                   />
                   {isSearchingDest && (
                     <Loader2 className="w-4 h-4 text-emerald-400 animate-spin absolute right-3 top-3.5" />
@@ -453,9 +582,38 @@ export const MyJourneyPage: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Quick Destination Chips */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 block mb-1.5 uppercase tracking-wider">
+                  Quick Real Destinations:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {REAL_DESTINATIONS.map((rd, i) => {
+                    const isSelected = destination.includes(rd.shortName) || destination.includes(rd.name);
+                    const IconComp = rd.icon;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSelectPresetDestination(rd)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                          isSelected
+                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50'
+                            : 'bg-slate-900 text-slate-300 border border-slate-800 hover:border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        <IconComp className={`w-3.5 h-3.5 ${rd.color}`} />
+                        <span>{rd.shortName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Travel Date & Time */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
                   Travel Date
@@ -551,7 +709,7 @@ export const MyJourneyPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setReportPreFill({
-                    locationName: origin.includes('Airport') ? 'Vagaikulam Feeder Stop (TCR Airport)' : 'Vannarpettai Bypass Road (FXEC Entrance)',
+                    locationName: origin.includes('Airport') ? 'Vagaikulam Feeder Stop (TCR Airport)' : `${origin.split(',')[0]} Crossing`,
                     lat: originCoords.lat,
                     lng: originCoords.lng
                   });
@@ -582,36 +740,30 @@ export const MyJourneyPage: React.FC = () => {
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <span className="text-xs font-mono uppercase font-bold text-cyan-400 flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5" /> Regional Model Info
+                <Database className="w-3.5 h-3.5" /> Selected Route Metrics
               </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                Friction: {Math.min(99, Math.round(76 * (heatMultiplier > 1.2 ? 1.15 : 1.0)))}/100
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                Road Dynamic
               </span>
             </div>
 
-            <h3 className="text-base font-bold text-white mt-3">
-              Thoothukudi ➔ Tirunelveli Corridor
+            <h3 className="text-base font-bold text-white mt-3 truncate" title={`${origin.split(',')[0]} ➔ ${destination.split(',')[0]}`}>
+              {origin.split(',')[0]} ➔ {destination.split(',')[0]}
             </h3>
             <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-              Via NH 138 4-lane highway passing Vagaikulam Airport, Vallanadu Sanctuary, and Vannarpettai Bypass Road directly to Francis Xavier Engineering College.
+              Real-world distance calculated from your active departure origin to destination point.
             </p>
 
             <div className="space-y-3 mt-5 text-xs">
               <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-                <span className="text-slate-400">Total Distance:</span>
-                <strong className="text-white font-mono">38.2 km</strong>
+                <span className="text-slate-400">Road Distance:</span>
+                <strong className="text-white font-mono">{currentDistanceKm} km</strong>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-                <span className="text-slate-400">Total Door-to-Door Time:</span>
-                <strong className="text-cyan-300 font-mono">78 min</strong>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-                <span className="text-slate-400">Vagaikulam Feeder Wait:</span>
-                <strong className="text-rose-400 font-mono">16 min delay ⚠</strong>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/80">
-                <span className="text-slate-400">Vannarpettai Crossing:</span>
-                <strong className="text-amber-400 font-mono">12 min transfer</strong>
+                <span className="text-slate-400">Est. Door-to-Door Time:</span>
+                <strong className="text-cyan-300 font-mono">
+                  {Math.round(currentDistanceKm * 2.2 + 18)} min
+                </strong>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-800/80">
                 <span className="text-slate-400">Climate Strain Multiplier:</span>
@@ -619,9 +771,17 @@ export const MyJourneyPage: React.FC = () => {
                   {heatMultiplier}x ({ambientTempCelsius}°C)
                 </strong>
               </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-800/80">
+                <span className="text-slate-400">Estimated Transit Fare:</span>
+                <strong className="text-emerald-400 font-mono">
+                  ₹{Math.max(15, Math.min(65, Math.round(currentDistanceKm * 1.2)))}
+                </strong>
+              </div>
               <div className="flex justify-between py-1.5">
-                <span className="text-slate-400">Estimated TNSTC Fare:</span>
-                <strong className="text-emerald-400 font-mono">₹45</strong>
+                <span className="text-slate-400">Transfer Traps on Path:</span>
+                <strong className="text-amber-400 font-mono">
+                  {reports.length > 0 ? `${reports.length} Flagged` : '0 Safe'}
+                </strong>
               </div>
             </div>
           </div>
@@ -629,10 +789,10 @@ export const MyJourneyPage: React.FC = () => {
           <div className="mt-6 pt-4 border-t border-slate-800 space-y-2">
             <button
               type="button"
-              onClick={handleLoadTcrToFxec}
+              onClick={handleAnalyze}
               className="w-full py-3 rounded-xl bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 font-bold text-xs transition-all flex items-center justify-center gap-2"
             >
-              <span>Inspect in Journey Analyzer</span>
+              <span>Analyze in Deep Forensics</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
