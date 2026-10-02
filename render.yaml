@@ -1,0 +1,39 @@
+services:
+  # ===================================================
+  # 1. MobiLens AI Backend (FastAPI Python Service)
+  # ===================================================
+  - type: web
+    name: mobilens-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MONGO_URI
+        sync: false # Set your MongoDB Atlas URI in the Render dashboard
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # ===================================================
+  # 2. MobiLens AI Frontend (React Vite Static Site)
+  # ===================================================
+  - type: web
+    name: mobilens-frontend
+    runtime: static
+    rootDir: frontend
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false # Set to https://<your-backend-name>.onrender.com/api in Render dashboard
