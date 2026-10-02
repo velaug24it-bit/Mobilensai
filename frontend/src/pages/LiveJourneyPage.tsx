@@ -92,9 +92,14 @@ export const LiveJourneyPage: React.FC = () => {
 
         // Default select nearest stop along active corridor
         if (bundle.stops && bundle.stops.length > 0) {
-          const defaultStop = bundle.stops.find(s => s.stop_id.includes('VAG') || s.stop_id.includes('TCR')) || bundle.stops[0];
-          setSelectedStop(defaultStop);
-          loadArrivals(defaultStop.stop_id);
+          const defaultStop = bundle.stops.find(s => {
+            const sid = s.stop_id || (s as any).id || '';
+            return sid.includes('VAG') || sid.includes('TCR');
+          }) || bundle.stops[0];
+          if (defaultStop) {
+            setSelectedStop(defaultStop);
+            loadArrivals(defaultStop.stop_id || (defaultStop as any).id);
+          }
         }
 
         // Default select corridor bus (Bus 15)

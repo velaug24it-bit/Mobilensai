@@ -329,7 +329,29 @@ export interface LiveTransitBundle {
 export async function fetchLiveTransit(): Promise<LiveTransitBundle | null> {
   try {
     const res = await fetch(`${API_BASE}/transit/live`);
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data) {
+        if (Array.isArray(data.stops)) {
+          data.stops = data.stops.map((s: any) => ({
+            ...s,
+            stop_id: s.stop_id || s.id || '',
+            stop_name: s.stop_name || s.name || '',
+            is_accessible: s.is_accessible ?? s.wheelchair_accessible ?? true,
+            routes_served: s.routes_served || ['15', '7B'],
+            shelter_type: s.shelter_type || (s.has_shelter ? 'Covered Shelter' : 'Open Stop')
+          }));
+        }
+        if (Array.isArray(data.routes)) {
+          data.routes = data.routes.map((r: any) => ({
+            ...r,
+            route_id: r.route_id || r.id || '',
+            color: r.color || '#06b6d4'
+          }));
+        }
+      }
+      return data;
+    }
   } catch (err) {
     console.warn('Live transit fetch error:', err);
   }

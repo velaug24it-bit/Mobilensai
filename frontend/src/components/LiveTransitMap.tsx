@@ -65,10 +65,14 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
     : safeVehicles.filter(v => v.route_id === activeRouteFilter || v.route_short_name === activeRouteFilter);
 
   const displayedStops = activeRouteFilter === 'my_corridor'
-    ? safeStops.filter(s => 
-        s.routes_served?.some(r => r === '15' || r === '7B' || r.includes('15') || r.includes('7B')) ||
-        s.stop_id.startsWith('STOP-TCR') || s.stop_id.startsWith('STOP-VAG') || s.stop_id.startsWith('STOP-VAL') || s.stop_id.startsWith('STOP-VAN') || s.stop_id.startsWith('STOP-THM') || s.stop_id.startsWith('STOP-NBS')
-      )
+    ? safeStops.filter(s => {
+        const sid = s.stop_id || (s as any).id || '';
+        return (
+          s.routes_served?.some(r => r === '15' || r === '7B' || r.includes('15') || r.includes('7B')) ||
+          sid.startsWith('STOP-TCR') || sid.startsWith('STOP-VAG') || sid.startsWith('STOP-VAL') || 
+          sid.startsWith('STOP-VAN') || sid.startsWith('STOP-THM') || sid.startsWith('STOP-NBS')
+        );
+      })
     : safeStops;
 
   // Ultra-clean compact bus marker pill — avoids crowding/congestion on the map
@@ -281,11 +285,12 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
         </Marker>
 
         {/* Transit Stops (Filtered cleanly to active route) */}
-        {displayedStops.map(stop => {
-          const isSelected = selectedStop?.stop_id === stop.stop_id;
+        {displayedStops.map((stop, idx) => {
+          const sId = stop.stop_id || (stop as any).id || `stop-${idx}`;
+          const isSelected = selectedStop ? (selectedStop.stop_id === sId || (selectedStop as any).id === sId) : false;
           return (
             <Marker
-              key={stop.stop_id}
+              key={sId}
               position={[stop.lat, stop.lng]}
               icon={createStopIcon(stop, isSelected)}
               eventHandlers={{
