@@ -35,6 +35,7 @@ import { useApp } from '../context/AppContext';
 import { NotificationPanel } from '../components/NotificationPanel';
 import { AIChatModal } from '../components/AIChatModal';
 import { HackathonDemoModal } from '../components/HackathonDemoModal';
+import { HackathonDemoVideo } from '../components/HackathonDemoVideo';
 import { PresentationMode } from '../components/PresentationMode';
 import { LocationModal } from '../components/LocationModal';
 import { ReportTrapModal } from '../components/ReportTrapModal';
@@ -60,7 +61,11 @@ export const MainLayout: React.FC = () => {
     backendStatus,
     databaseName,
     currentLocation,
-    setIsLocationModalOpen
+    setIsLocationModalOpen,
+    showDemoVideo,
+    setShowDemoVideo,
+    setIsHackathonDemoRunning,
+    setHackathonStep,
   } = useApp();
 
   const allNavLinks = [
@@ -106,6 +111,18 @@ export const MainLayout: React.FC = () => {
 
       {/* Presentation Mode Fullscreen Overlay */}
       <PresentationMode />
+
+      {/* Cinematic Hackathon Demo Video (plays before step-by-step modal) */}
+      {showDemoVideo && (
+        <HackathonDemoVideo
+          onClose={() => setShowDemoVideo(false)}
+          onFinished={() => {
+            setShowDemoVideo(false);
+            setIsHackathonDemoRunning(true);
+            setHackathonStep(1);
+          }}
+        />
+      )}
 
       {/* Guided Hackathon Demo Walkthrough */}
       <HackathonDemoModal />

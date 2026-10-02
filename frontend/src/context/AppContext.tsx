@@ -96,13 +96,17 @@ interface AppContextType {
   isDemoMode: boolean;
   setIsDemoMode: (val: boolean) => void;
   isHackathonDemoRunning: boolean;
+  setIsHackathonDemoRunning: (val: boolean) => void;
   hackathonStep: number;
+  setHackathonStep: (val: number) => void;
   startHackathonDemo: () => void;
   stopHackathonDemo: () => void;
   nextHackathonStep: () => void;
   prevHackathonStep: () => void;
   isPresentationMode: boolean;
   setIsPresentationMode: (val: boolean) => void;
+  showDemoVideo: boolean;
+  setShowDemoVideo: (val: boolean) => void;
 
   // Notifications
   notifications: NotificationItem[];
@@ -227,6 +231,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isHackathonDemoRunning, setIsHackathonDemoRunning] = useState<boolean>(false);
   const [hackathonStep, setHackathonStep] = useState<number>(1);
   const [isPresentationMode, setIsPresentationMode] = useState<boolean>(false);
+  const [showDemoVideo, setShowDemoVideo] = useState<boolean>(false);
 
   const [notifications, setNotifications] = useState<NotificationItem[]>(NOTIFICATIONS_DATA);
   const [isNotificationOpen, setIsNotificationOpen] = useState<boolean>(false);
@@ -414,9 +419,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Hackathon demo flow controller
   const startHackathonDemo = () => {
-    setIsHackathonDemoRunning(true);
-    setHackathonStep(1);
     loadDemoJourney();
+    setShowDemoVideo(true); // Show cinematic video first
   };
 
   const stopHackathonDemo = () => {
@@ -531,13 +535,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isDemoMode,
       setIsDemoMode,
       isHackathonDemoRunning,
+      setIsHackathonDemoRunning,
       hackathonStep,
+      setHackathonStep,
       startHackathonDemo,
       stopHackathonDemo,
       nextHackathonStep,
       prevHackathonStep,
       isPresentationMode,
       setIsPresentationMode,
+      showDemoVideo,
+      setShowDemoVideo,
       notifications,
       unreadCount,
       markNotificationRead,
