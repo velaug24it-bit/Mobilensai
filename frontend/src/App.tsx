@@ -21,6 +21,7 @@ import { JourneyHistoryPage } from './pages/JourneyHistoryPage';
 import { AIAssistantPage } from './pages/AIAssistantPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { MobilityNearbyPage } from './pages/MobilityNearbyPage';
 
 // Protected Route Guard: If not logged in, force redirect to /login
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -65,6 +66,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="dashboard" element={<Navigate to="/overview" replace />} />
         <Route path="my-journey" element={<MyJourneyPage />} />
         <Route path="live-journey" element={<LiveJourneyPage />} />
+        <Route path="nearby" element={<MobilityNearbyPage />} />
+        <Route path="mobility-nearby" element={<Navigate to="/nearby" replace />} />
         <Route path="analyzer" element={<JourneyAnalyzerPage />} />
         <Route path="journey-analyzer" element={<Navigate to="/analyzer" replace />} />
         <Route path="map" element={<MobilityFrictionMapPage />} />

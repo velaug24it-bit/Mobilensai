@@ -72,6 +72,7 @@ export const MainLayout: React.FC = () => {
     { to: '/overview', label: 'Dashboard', icon: Activity, roles: ['citizen', 'planner', 'accessibility', 'admin'] },
     { to: '/my-journey', label: 'My Journey', icon: Navigation, badge: '61 Min', roles: ['citizen', 'accessibility', 'admin'] },
     { to: '/live-journey', label: 'Live Journey', icon: Radio, badge: 'Live GPS', roles: ['citizen', 'planner', 'accessibility', 'admin'] },
+    { to: '/nearby', label: 'Nearby', icon: Compass, badge: 'Essentials', roles: ['citizen', 'planner', 'accessibility', 'admin'] },
     { to: '/analyzer', label: 'Journey Analyzer', icon: TrendingDown, badge: 'Bottlenecks', roles: ['citizen', 'accessibility', 'admin'] },
     { to: '/map', label: 'Mobility Friction Map', icon: MapPin, roles: ['citizen', 'planner', 'accessibility', 'admin'] },
     { to: '/risk-map', label: 'Mobility Risk Map', icon: ShieldAlert, badge: 'CV Vision', roles: ['citizen', 'planner', 'accessibility', 'admin'] },

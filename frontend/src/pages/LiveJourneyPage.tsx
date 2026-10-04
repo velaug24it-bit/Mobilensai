@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { 
   fetchLiveTransit, 
@@ -20,6 +21,7 @@ import { LiveJourneyTimeline } from '../components/LiveJourneyTimeline';
 import { SmartBusStopPanel } from '../components/SmartBusStopPanel';
 import { CanICatchBusModal } from '../components/CanICatchBusModal';
 import { DisruptionAlternativesPanel } from '../components/DisruptionAlternativesPanel';
+import { JourneyEssentialsDrawer } from '../components/JourneyEssentialsDrawer';
 import { 
   Radio, 
   Footprints, 
@@ -35,7 +37,14 @@ import {
   Bus,
   Gauge,
   CheckCircle2 as CheckCircle2Icon,
-  MapPin as MapPinIcon
+  MapPin as MapPinIcon,
+  Compass,
+  Hospital,
+  Pill,
+  Utensils,
+  Bath,
+  Fuel,
+  CreditCard
 } from 'lucide-react';
 import { 
   INITIAL_STOPS, 
@@ -68,6 +77,7 @@ function crowdingPct(level: string) {
 }
 
 export const LiveJourneyPage: React.FC = () => {
+  const navigate = useNavigate();
   const { currentLocation, role, currentUser, departureHour, ambientTempCelsius, heatStressLevel, heatMultiplier } = useApp();
   
   // Live clock
@@ -100,6 +110,9 @@ export const LiveJourneyPage: React.FC = () => {
   const [isCatchModalOpen, setIsCatchModalOpen] = useState<boolean>(false);
   const [catchResult, setCatchResult] = useState<CatchabilityResult | null>(null);
   const [isCatchLoading, setIsCatchLoading] = useState<boolean>(false);
+
+  // Journey Essentials Drawer
+  const [isEssentialsDrawerOpen, setIsEssentialsDrawerOpen] = useState<boolean>(false);
 
   const pollingRef = useRef<any>(null);
 
@@ -306,6 +319,15 @@ export const LiveJourneyPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Journey Essentials Quick Access */}
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 border border-cyan-500/40 shadow-lg transition-transform hover:scale-105"
+          >
+            <Compass className="w-4 h-4 text-cyan-400 animate-spin-slow" />
+            <span>Journey Essentials</span>
+          </button>
+
           {selectedVehicle && selectedStop && (
             <button
               onClick={() => handleCheckCatchability(selectedVehicle, selectedStop)}
@@ -326,6 +348,75 @@ export const LiveJourneyPage: React.FC = () => {
             ) : (
               <><Zap className="w-4 h-4 text-amber-300" /><span>Simulate Delay (+6m)</span></>
             )}
+          </button>
+        </div>
+      </div>
+
+      {/* Quick-Access Journey Essentials Strip (Section 6) */}
+      <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl shadow-lg flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800">
+            Journey Essentials
+          </span>
+          <span className="text-xs text-slate-400 hidden sm:inline">
+            Near {selectedStop?.stop_name || 'Vagaikulam Feeder Stop'}:
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors"
+          >
+            <Hospital className="w-3.5 h-3.5 text-rose-400" />
+            <span>Emergency</span>
+          </button>
+
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition-colors"
+          >
+            <Pill className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Medicine (180m)</span>
+          </button>
+
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-colors"
+          >
+            <Utensils className="w-3.5 h-3.5 text-amber-400" />
+            <span>Food (250m)</span>
+          </button>
+
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-colors"
+          >
+            <Bath className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Toilet (45m)</span>
+          </button>
+
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border border-orange-500/30 transition-colors"
+          >
+            <Fuel className="w-3.5 h-3.5 text-orange-400" />
+            <span>Fuel / EV</span>
+          </button>
+
+          <button
+            onClick={() => setIsEssentialsDrawerOpen(true)}
+            className="flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 transition-colors"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-blue-400" />
+            <span>ATM (95m)</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/nearby')}
+            className="text-xs font-bold text-cyan-400 hover:text-cyan-300 px-2 py-1 rounded transition-colors whitespace-nowrap"
+          >
+            View All &rarr;
           </button>
         </div>
       </div>
@@ -712,6 +803,18 @@ export const LiveJourneyPage: React.FC = () => {
           const found = vehicles.find(v => v.route_short_name === nextBus.route);
           if (found) setSelectedVehicle(found);
         }}
+      />
+
+      {/* Journey Essentials Slide-out Drawer */}
+      <JourneyEssentialsDrawer
+        isOpen={isEssentialsDrawerOpen}
+        onClose={() => setIsEssentialsDrawerOpen(false)}
+        currentStopName={selectedStop ? selectedStop.stop_name : 'Vagaikulam Feeder Stop'}
+        anchorLat={selectedStop ? selectedStop.lat : userLat}
+        anchorLng={selectedStop ? selectedStop.lng : userLng}
+        busEtaMin={isDelayed ? busEta + simulatedDelay : busEta}
+        busRouteName={selectedVehicle ? `Bus ${selectedVehicle.route_short_name}` : 'Bus 12A'}
+        onOpenFullNearbyPage={() => navigate('/nearby')}
       />
     </div>
   );

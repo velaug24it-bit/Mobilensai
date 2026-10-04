@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import db_manager
-from app.routes import dashboard, journeys, zones, interventions, accessibility, ai, notifications, auth, reports, transit, risk
+from app.routes import dashboard, journeys, zones, interventions, accessibility, ai, notifications, auth, reports, transit, risk, places
 from app.transit.simulation_provider import transit_engine
 from app.transit.road_risk_engine import DEFAULT_CONFLICTS
 
@@ -50,6 +50,7 @@ app.include_router(notifications.router)
 app.include_router(transit.router)
 app.include_router(transit.journey_router)
 app.include_router(risk.router)
+app.include_router(places.router)
 
 @app.get("/")
 async def root():

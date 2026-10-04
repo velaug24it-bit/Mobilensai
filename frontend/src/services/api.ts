@@ -1,4 +1,6 @@
 import { Zone, Journey, RiskZone, ConflictEvent, VideoAnalysisResult } from '../types';
+import { NearbyPlace, PlaceCategory, DetourAnalysisResult, CityAccessAudit } from '../types/places';
+import { PLACE_CATEGORIES, FALLBACK_PLACES } from '../data/placesData';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:8000/api');
 
@@ -681,6 +683,206 @@ export async function analyzeTrafficVideo(params: { preset?: string; file?: File
     console.warn('Video analysis API error:', err);
   }
   return null;
+}
+
+// ==========================================
+// MOBILITY NEARBY & JOURNEY ESSENTIALS API
+// ==========================================
+export async function fetchPlaceCategories(): Promise<PlaceCategory[]> {
+  try {
+    const res = await fetch(`${API_BASE}/places/categories`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Using local fallback for place categories:', err);
+  }
+  return PLACE_CATEGORIES;
+}
+
+export async function fetchNearbyPlaces(params: {
+  lat: number;
+  lng: number;
+  radius_meters?: number;
+  category?: string;
+  query?: string;
+  is_emergency?: boolean;
+  accessible_only?: boolean;
+  open_now_only?: boolean;
+  bus_eta_min?: number;
+  along_corridor?: boolean;
+  scope?: string;
+  limit?: number;
+}): Promise<NearbyPlace[]> {
+  try {
+    const url = new URL(`${API_BASE}/places/nearby`);
+    url.searchParams.append('lat', params.lat.toString());
+    url.searchParams.append('lng', params.lng.toString());
+    if (params.radius_meters) url.searchParams.append('radius_meters', params.radius_meters.toString());
+    if (params.category && params.category !== 'all') url.searchParams.append('category', params.category);
+    if (params.query) url.searchParams.append('query', params.query);
+    if (params.is_emergency) url.searchParams.append('is_emergency', 'true');
+    if (params.accessible_only) url.searchParams.append('accessible_only', 'true');
+    if (params.open_now_only) url.searchParams.append('open_now_only', 'true');
+    if (params.bus_eta_min !== undefined) url.searchParams.append('bus_eta_min', params.bus_eta_min.toString());
+    if (params.along_corridor) url.searchParams.append('along_corridor', 'true');
+    if (params.scope) url.searchParams.append('scope', params.scope);
+    if (params.limit) url.searchParams.append('limit', params.limit.toString());
+
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.places)) {
+        return data.places;
+      }
+    }
+  } catch (err) {
+    console.warn('Backend nearby places unavailable, using local mock data:', err);
+  }
+
+  // Resilient client fallback
+  let list = [...FALLBACK_PLACES];
+  if (params.category && params.category !== 'all') {
+    list = list.filter(p => p.category === params.category);
+  }
+  if (params.is_emergency) {
+    list = list.filter(p => ['hospital', 'pharmacy', 'police', 'fire_station'].includes(p.category));
+  }
+  if (params.accessible_only) {
+    list = list.filter(p => p.accessibility.step_free_entrance || p.accessibility.wheelchair_ramp);
+  }
+  if (params.open_now_only) {
+    list = list.filter(p => p.is_open);
+  }
+  return list;
+}
+
+export async function searchNearbyPlacesQuery(q: string, lat: number = 8.7258, lng: number = 77.9850): Promise<NearbyPlace[]> {
+  try {
+    const res = await fetch(`${API_BASE}/places/search?q=${encodeURIComponent(q)}&lat=${lat}&lng=${lng}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.places || [];
+    }
+  } catch (err) {
+    console.warn('Search query error, using local fallback:', err);
+  }
+  const qLower = q.toLowerCase();
+  return FALLBACK_PLACES.filter(p => 
+    p.name.toLowerCase().includes(qLower) || 
+    p.category_label.toLowerCase().includes(qLower) ||
+    p.address.toLowerCase().includes(qLower)
+  );
+}
+
+export async function analyzePlaceDetour(params: {
+  place_id: string;
+  current_lat: number;
+  current_lng: number;
+  destination_lat: number;
+  destination_lng: number;
+  bus_eta_minutes?: number;
+  journey_friction_score?: number;
+  journey_duration_min?: number;
+}): Promise<DetourAnalysisResult | null> {
+  try {
+    const res = await fetch(`${API_BASE}/places/detour-analysis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Detour calculation error:', err);
+  }
+  // Local fallback
+  return {
+    original_duration_min: params.journey_duration_min || 45,
+    detour_duration_min: (params.journey_duration_min || 45) + 7,
+    extra_time_min: 7,
+    extra_distance_meters: 350,
+    original_friction_score: params.journey_friction_score || 48,
+    detour_friction_score: (params.journey_friction_score || 48) + 6,
+    friction_impact_pts: 6,
+    detour_severity: 'Small detour',
+    transfer_risk_warning: (params.bus_eta_minutes && params.bus_eta_minutes < 10) 
+      ? '⚠️ This stop may increase your transfer risk.' 
+      : null
+  };
+}
+
+export async function addPlaceToActiveJourney(placeId: string): Promise<any> {
+  try {
+    const res = await fetch(`${API_BASE}/places/add-to-journey`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ place_id: placeId })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('Add to journey error:', err);
+  }
+  return {
+    status: 'success',
+    message: 'Added stop to current journey.',
+    recalculated_journey: {
+      additional_walking_minutes: 6,
+      additional_friction_pts: 6,
+      new_friction_score: 54,
+      transfer_risk_warning: '⚠️ Added detour may decrease transfer buffer.'
+    }
+  };
+}
+
+export async function fetchPlacesAlongRoute(routePoints: [number, number][], category?: string): Promise<NearbyPlace[]> {
+  try {
+    const res = await fetch(`${API_BASE}/places/route-search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        route_points: routePoints,
+        categories: category ? [category] : undefined,
+        max_corridor_deviation_m: 700
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.places || [];
+    }
+  } catch (err) {
+    console.warn('Route search error:', err);
+  }
+  return FALLBACK_PLACES;
+}
+
+export async function fetchCityAccessAudit(zoneCode: string = 'ZONE-17'): Promise<CityAccessAudit | null> {
+  try {
+    const res = await fetch(`${API_BASE}/places/city-access-audit?zone_code=${encodeURIComponent(zoneCode)}`);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('City access audit API error:', err);
+  }
+  return {
+    zone_code: zoneCode,
+    zone_name: 'Zone 17: Vagaikulam Airport Transit Corridor',
+    nearest_hospital_km: 1.8,
+    nearest_pharmacy_km: 0.18,
+    nearest_transit_m: 120,
+    nearest_emergency_km: 2.1,
+    overall_access_rating: 'Moderate (Essential Gaps in Emergency Trauma Access)',
+    vulnerability_notes: [
+      'High reliance on highway-side pharmacies; lacks rapid municipal 24/7 pediatric trauma care within 1 km.',
+      'Unsheltered pedestrian walking path across NH 138 introduces friction for elderly and wheelchair citizens.',
+      'Public e-toilets present at terminal but absent at intermediate unscheduled highway stops.'
+    ],
+    simulated: true
+  };
 }
 
 

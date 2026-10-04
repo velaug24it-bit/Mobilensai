@@ -27,13 +27,52 @@ async def ai_chat(req: AIChatRequest) -> AIChatResponse:
         reply = (
             "Doubling bus frequency reduces random headway wait from 19m to ~10m, but without timetable synchronization, transfer misses still occur."
         )
-    elif "accessibility" in text or "wheelchair" in text:
+    elif "pharmacy" in text or "medicine" in text or "chemist" in text:
+        if "accessible" in text or "wheelchair" in text:
+            reply = (
+                "[Simulated Demo Locations] Found 2 accessible pharmacies along your corridor: "
+                "1. Apollo Pharmacy at Vagaikulam NH Junction (180m away, step-free wide double doors, 24/7). "
+                "2. Thulasi Pharmacy at Vannarpettai Bypass (near FXEC, ramped entrance, 24/7). Both offer verified barrier-free access."
+            )
+        elif "before my bus" in text or "visit" in text or "time" in text:
+            reply = (
+                "[Simulated Demo Locations] With your bus expected in ~12 minutes, visiting Apollo Pharmacy (180m away) takes ~3m walk + 5m visit + 3m return (total 11m). "
+                "Verdict: 🟢 Likely feasible, but maintain a tight buffer. We do not guarantee timing."
+            )
+        else:
+            reply = (
+                "[Simulated Demo Locations] Nearest pharmacy is Apollo Pharmacy — Vagaikulam NH Junction (180m, ~2 min walk, Open 24/7, Phone: +91 462 258 4401). "
+                "Alternative: MedPlus Chemist (320m, Open until 11 PM)."
+            )
+    elif "petrol" in text or "fuel" in text or "gas" in text:
         reply = (
-            "Wheelchair passengers suffer 72 friction vs 28 for able-bodied commuters due to broken step-free links at Station B. Rerouting via Station C drops friction to 41."
+            "[Simulated Demo Locations] Nearest fuel station: Indian Oil Petrol Bunk & Restroom at NH 138 Mile 12, Vagaikulam (450m, 24/7 service, air, restrooms, and 60kW Tata Power DC EV charging bay)."
         )
-    else:
+    elif "food" in text or "restaurant" in text or "eat" in text:
+        if "least detour" in text or "detour" in text:
+            reply = (
+                "[Simulated Demo Locations] Lowest-detour option is Hotel Saravana Bhavan Highway Eatery (250m from Vagaikulam Feeder Stop, extra walk: 180m, detour time: ~6 min, mobility impact: +4 friction pts). "
+                "Alternative: FX Canteen directly inside campus North Gate (+0 min detour)."
+            )
+        else:
+            reply = (
+                "[Simulated Demo Locations] Food along your journey: "
+                "1. Hotel Saravana Bhavan (Vagaikulam Bus Bay, 250m, South Indian tiffin & meals). "
+                "2. Madras Coffee House (Airport Blvd, 320m, filter coffee & bakery). "
+                "3. FX Canteen (at your destination, student meals & juices)."
+            )
+    elif "hospital" in text or "emergency" in text or "clinic" in text:
         reply = (
-            "MobiLens AI reconstructs multi-modal human journeys, decomposes waiting/transfer burdens, and tests simulation interventions in real time."
+            "[Simulated Demo Locations] 🚨 Emergency Services Near Destination / Corridor: "
+            "1. Galaxy Hospital Multispeciality (104 South Bypass Rd, Vannarpettai — 450m from FXEC gate, 24/7 Trauma, ICU). "
+            "2. Tirunelveli Medical College Hospital (Palayamkottai, 24/7 Tertiary care). "
+            "Note: MobiLens is not an emergency dispatch system. For immediate life-safety emergencies, dial 108 or local emergency services."
+        )
+    elif "essential" in text or "nearby" in text or "route" in text:
+        reply = (
+            "[Simulated Demo Locations] Essential services active on your Vagaikulam ➔ FXEC corridor: "
+            "🏥 Hospital: Galaxy Hospital (450m from campus) | 💊 Pharmacy: Apollo (180m from bus stop) | "
+            "🚻 Restroom: TNSTC Municipal Bay | 🏧 ATM: SBI 24/7 | ⛽ Fuel/EV: Indian Oil + 60kW DC Fast Charger."
         )
 
     return AIChatResponse(reply=reply, source="local_prototype_ai", confidence=0.95)
