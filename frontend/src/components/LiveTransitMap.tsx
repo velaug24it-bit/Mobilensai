@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { TransitVehicle, TransitRoute, TransitStop } from '../services/api';
-import { Navigation, Info, Users, ShieldAlert, Sparkles, Footprints, AlertTriangle } from 'lucide-react';
+import { Navigation, Info, Users, ShieldAlert, Sparkles, Footprints, AlertTriangle, ArrowRight, Compass } from 'lucide-react';
+import { Journey } from '../types';
 
 interface LiveTransitMapProps {
   vehicles: TransitVehicle[];
@@ -11,6 +12,7 @@ interface LiveTransitMapProps {
   selectedVehicle: TransitVehicle | null;
   selectedStop: TransitStop | null;
   userLocation: { lat: number; lng: number; label: string };
+  journey?: Journey | null;
   onSelectVehicle: (vehicle: TransitVehicle) => void;
   onSelectStop: (stop: TransitStop) => void;
   onCheckCatchability?: (vehicle: TransitVehicle, stop: TransitStop) => void;
@@ -26,6 +28,22 @@ const MapCenterController: React.FC<{ center: [number, number]; zoom?: number }>
   return null;
 };
 
+// Map auto-bounds helper for dynamic trip coordinates
+const MapBoundsController: React.FC<{ bounds: [number, number][] | null; triggerKey: any }> = ({ bounds, triggerKey }) => {
+  const map = useMap();
+  React.useEffect(() => {
+    if (bounds && bounds.length >= 2) {
+      try {
+        const latLngBounds = L.latLngBounds(bounds);
+        map.fitBounds(latLngBounds, { padding: [55, 55], maxZoom: 15 });
+      } catch (e) {
+        console.warn('fitBounds error:', e);
+      }
+    }
+  }, [bounds, triggerKey, map]);
+  return null;
+};
+
 const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
   vehicles,
   routes,
@@ -33,6 +51,7 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
   selectedVehicle,
   selectedStop,
   userLocation,
+  journey,
   onSelectVehicle,
   onSelectStop,
   onCheckCatchability,
@@ -46,10 +65,81 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
   const corridorCenterLat = 8.727;
   const corridorCenterLng = 77.869;
 
-  // Default to the user's active journey corridor so irrelevant city buses are not crammed
-  const [activeRouteFilter, setActiveRouteFilter] = useState<string>('my_corridor');
-  const [mapCenter, setMapCenter] = useState<[number, number]>([corridorCenterLat, corridorCenterLng]);
-  const [zoomLevel, setZoomLevel] = useState<number>(11);
+  const hasCustomTrip = Boolean(
+    journey &&
+    journey.routeCoordinates &&
+    journey.routeCoordinates.length >= 2
+  );
+
+  const tripPolyline: [number, number][] = useMemo(() => {
+    if (journey?.routeCoordinates && journey.routeCoordinates.length >= 2) {
+      return journey.routeCoordinates;
+    }
+    if (journey?.originCoords && journey?.destCoords) {
+      return [
+        [journey.originCoords.lat, journey.originCoords.lng],
+        [journey.destCoords.lat, journey.destCoords.lng]
+      ];
+    }
+    return [];
+  }, [journey]);
+
+  const originPoint: [number, number] = useMemo(() => {
+    if (journey?.originCoords) return [journey.originCoords.lat, journey.originCoords.lng];
+    if (tripPolyline.length > 0) return tripPolyline[0];
+    return [userLocation.lat, userLocation.lng];
+  }, [journey, tripPolyline, userLocation]);
+
+  const destPoint: [number, number] = useMemo(() => {
+    if (journey?.destCoords) return [journey.destCoords.lat, journey.destCoords.lng];
+    if (tripPolyline.length > 0) return tripPolyline[tripPolyline.length - 1];
+    return [8.718, 77.747]; // Default FXEC
+  }, [journey, tripPolyline]);
+
+  const originShort = journey?.origin ? journey.origin.split(',')[0].trim() : userLocation.label;
+  const destShort = journey?.destination ? journey.destination.split(',')[0].trim() : 'FXEC Campus';
+
+  // Default to the user's active journey if provided
+  const [activeRouteFilter, setActiveRouteFilter] = useState<string>(hasCustomTrip ? 'active_trip' : 'my_corridor');
+  const [mapCenter, setMapCenter] = useState<[number, number]>([originPoint[0], originPoint[1]]);
+  const [zoomLevel, setZoomLevel] = useState<number>(13);
+  const [boundsTrigger, setBoundsTrigger] = useState<number>(0);
+
+  // Auto trigger bounds fit when a custom trip is loaded
+  useEffect(() => {
+    if (hasCustomTrip && tripPolyline.length >= 2) {
+      setActiveRouteFilter('active_trip');
+      setBoundsTrigger(prev => prev + 1);
+    }
+  }, [hasCustomTrip, tripPolyline]);
+
+  // Synthetic or designated vehicle for the active trip
+  const activeTripVehicle: TransitVehicle | null = useMemo(() => {
+    if (!hasCustomTrip || tripPolyline.length < 2) return null;
+    const midIdx = Math.floor(tripPolyline.length * 0.38);
+    const midCoord = tripPolyline[midIdx] || tripPolyline[0];
+    return {
+      vehicle_id: 'TRIP-BUS-LIVE',
+      route_id: 'ROUTE-ACTIVE-TRIP',
+      route_short_name: '12A',
+      lat: midCoord[0],
+      lng: midCoord[1],
+      speed_kmh: 38,
+      bearing_deg: 260,
+      stops_remaining: 3,
+      is_accessible: true,
+      last_updated: new Date().toISOString(),
+      crowding_level: 'Moderate',
+      eta_next_stop_min: 3,
+      delay_minutes: 0,
+      next_stop_id: 'STOP-ACTIVE-INTER',
+      next_stop_name: `Approaching ${destShort}`,
+      headsign: destShort,
+      distance_from_user_km: Number((journey?.totalDistanceKm ? journey.totalDistanceKm * 0.4 : 1.2).toFixed(1)),
+      route_color: '#10b981',
+      status: 'En Route (Live GPS)'
+    };
+  }, [hasCustomTrip, tripPolyline, destShort, journey]);
 
   // Filter routes and vehicles cleanly according to user's active journey
   const displayedRoutes = activeRouteFilter === 'my_corridor'
@@ -198,24 +288,103 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
     `
   });
 
+  // Origin Marker DivIcon
+  const originMarkerIcon = L.divIcon({
+    className: 'live-origin-div-icon',
+    iconSize: [160, 42],
+    iconAnchor: [80, 38],
+    html: `
+      <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+        <div style="
+          background: #064e3b;
+          color: #6ee7b7;
+          border: 2px solid #10b981;
+          border-radius: 20px;
+          padding: 4px 10px;
+          font-size: 11px;
+          font-weight: 800;
+          box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          white-space: nowrap;
+        ">
+          <span style="font-size: 12px;">🚶</span>
+          <span style="color: #a7f3d0;">Origin:</span>
+          <span style="color: white; max-width: 90px; overflow: hidden; text-overflow: ellipsis;">${originShort}</span>
+        </div>
+        <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #10b981;"></div>
+      </div>
+    `
+  });
+
+  // Destination Marker DivIcon
+  const destMarkerIcon = L.divIcon({
+    className: 'live-dest-div-icon',
+    iconSize: [170, 42],
+    iconAnchor: [85, 38],
+    html: `
+      <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+        <div style="
+          background: #1e1b4b;
+          color: #c4b5fd;
+          border: 2px solid #8b5cf6;
+          border-radius: 20px;
+          padding: 4px 10px;
+          font-size: 11px;
+          font-weight: 800;
+          box-shadow: 0 4px 14px rgba(139, 92, 246, 0.45);
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          white-space: nowrap;
+        ">
+          <span style="font-size: 12px;">🎯</span>
+          <span style="color: #ddd6fe;">Target:</span>
+          <span style="color: white; max-width: 95px; overflow: hidden; text-overflow: ellipsis;">${destShort}</span>
+        </div>
+        <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #8b5cf6;"></div>
+      </div>
+    `
+  });
+
   return (
     <div className="relative w-full h-[620px] rounded-2xl overflow-hidden border border-slate-700/60 shadow-2xl bg-slate-950">
       {/* Simulation Banner & Route Filters Header */}
       <div className="absolute top-3 left-3 right-3 z-[1000] flex flex-wrap items-center justify-between gap-2 pointer-events-none">
         {/* Left: Simulation Notice Badge */}
-        <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-amber-500/40 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span className="text-xs font-black text-amber-300 tracking-wide">
-            🟡 DEMO SIMULATION
+        <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-cyan-500/40 px-3 py-1.5 rounded-xl shadow-lg flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span className="text-xs font-black text-emerald-300 tracking-wide">
+            {hasCustomTrip ? '🟢 LIVE TRIP ACTIVE' : '🟡 DEMO SIMULATION'}
           </span>
-          <span className="text-[11px] text-slate-400 border-l border-slate-700 pl-2 hidden sm:inline">
-            Active Corridor: TCR ➔ FXEC
+          <span className="text-[11px] text-slate-300 border-l border-slate-700 pl-2 hidden sm:inline font-medium">
+            {hasCustomTrip ? (
+              <span>Trip: <strong className="text-white">{originShort}</strong> &rarr; <strong className="text-white">{destShort}</strong> ({journey?.totalDistanceKm || 3} km)</span>
+            ) : (
+              <span>Active Corridor: TCR ➔ FXEC</span>
+            )}
           </span>
         </div>
 
         {/* Right: Route Switcher & Center to Me */}
         <div className="pointer-events-auto flex items-center gap-2">
           <div className="bg-slate-900/95 backdrop-blur-md border border-cyan-500/40 p-1 rounded-xl shadow-xl flex items-center gap-1 text-xs">
+            {hasCustomTrip && (
+              <button
+                onClick={() => {
+                  setActiveRouteFilter('active_trip');
+                  setBoundsTrigger(prev => prev + 1);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
+                  activeRouteFilter === 'active_trip'
+                    ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-md ring-2 ring-emerald-400/50'
+                    : 'text-emerald-300 hover:text-white hover:bg-slate-800 border border-emerald-500/30'
+                }`}
+              >
+                <span>⚡ My Trip ({originShort} ➔ {destShort})</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 setActiveRouteFilter('my_corridor');
@@ -228,7 +397,7 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
                   : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
-              <span>🎯 My Route (TCR ➔ FXEC)</span>
+              <span>🎯 Corridor (TCR ➔ FXEC)</span>
             </button>
             <button
               onClick={() => {
@@ -277,7 +446,7 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
           {/* Quick Center to User */}
           <button
             onClick={() => {
-              setMapCenter([userLocation.lat, userLocation.lng]);
+              setMapCenter([originPoint[0], originPoint[1]]);
               setZoomLevel(14);
             }}
             title="Center on My Departure Location"
@@ -297,6 +466,9 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
         zoomControl={false}
       >
         <MapCenterController center={mapCenter} zoom={zoomLevel} />
+        {hasCustomTrip && (
+          <MapBoundsController bounds={tripPolyline} triggerKey={boundsTrigger} />
+        )}
         
         {/* OpenStreetMap Standard Tiles — Free, Reliable, No Watermark */}
         <TileLayer
@@ -304,7 +476,36 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Route Polylines (Robust position extraction) */}
+        {/* Dynamic User Custom Trip Polyline */}
+        {hasCustomTrip && (activeRouteFilter === 'active_trip' || activeRouteFilter === 'my_corridor') && tripPolyline.length >= 2 && (
+          <>
+            {/* Outer glow polyline */}
+            <Polyline
+              positions={tripPolyline}
+              pathOptions={{
+                color: '#06b6d4',
+                weight: 8,
+                opacity: 0.35,
+                lineCap: 'round',
+                lineJoin: 'round'
+              }}
+            />
+            {/* Inner dynamic polyline */}
+            <Polyline
+              positions={tripPolyline}
+              pathOptions={{
+                color: '#10b981',
+                weight: 4.5,
+                opacity: 0.95,
+                dashArray: '8, 8',
+                lineCap: 'round',
+                lineJoin: 'round'
+              }}
+            />
+          </>
+        )}
+
+        {/* Route Polylines (Standard GTFS Routes) */}
         {displayedRoutes.map((r, idx) => {
           const rId = r.route_id || (r as any).id || `polyline-${idx}`;
           const coords: [number, number][] = (r.waypoints && Array.isArray(r.waypoints) && r.waypoints.length >= 2)
@@ -321,28 +522,100 @@ const LiveTransitMapInner: React.FC<LiveTransitMapProps> = ({
               positions={coords}
               pathOptions={{
                 color: r.color || '#06b6d4',
-                weight: activeRouteFilter === rId || activeRouteFilter === 'my_corridor' ? 4.5 : 2.5,
-                opacity: 0.9,
+                weight: activeRouteFilter === rId || activeRouteFilter === 'my_corridor' ? 4 : 2,
+                opacity: 0.75,
                 dashArray: rId.includes('7B') ? '6, 8' : undefined
               }}
             />
           );
         })}
 
-        {/* User GPS Pin */}
-        <Marker position={[userLocation.lat, userLocation.lng]} icon={userGpsIcon}>
-          <Popup className="custom-transit-popup">
-            <div className="p-2 text-slate-900">
-              <div className="flex items-center gap-1.5 font-bold text-cyan-700 text-sm">
-                <span>📍</span>
-                <span>{userLocation.label}</span>
+        {/* Custom Journey Origin Marker */}
+        {hasCustomTrip ? (
+          <Marker position={originPoint} icon={originMarkerIcon}>
+            <Popup className="custom-transit-popup">
+              <div className="p-2 text-slate-900">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-700 text-sm">
+                  <span>🚶</span>
+                  <span>{originShort}</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  Active journey departure point ({journey?.origin}).
+                </p>
+                <div className="mt-2 text-[11px] font-bold text-slate-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                  Departure: {journey?.departureTime || '08:15 AM'}
+                </div>
               </div>
-              <p className="text-xs text-slate-600 mt-1">
-                Your live journey departure origin.
-              </p>
-            </div>
-          </Popup>
-        </Marker>
+            </Popup>
+          </Marker>
+        ) : (
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={userGpsIcon}>
+            <Popup className="custom-transit-popup">
+              <div className="p-2 text-slate-900">
+                <div className="flex items-center gap-1.5 font-bold text-cyan-700 text-sm">
+                  <span>📍</span>
+                  <span>{userLocation.label}</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  Your live journey departure origin.
+                </p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Custom Journey Target Destination Marker */}
+        {hasCustomTrip && (
+          <Marker position={destPoint} icon={destMarkerIcon}>
+            <Popup className="custom-transit-popup">
+              <div className="p-2 text-slate-900">
+                <div className="flex items-center gap-1.5 font-bold text-indigo-700 text-sm">
+                  <span>🎯</span>
+                  <span>{destShort}</span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  Target destination ({journey?.destination}).
+                </p>
+                <div className="mt-2 text-[11px] font-bold text-slate-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200">
+                  Est. Arrival: {journey?.arrivalTime || '08:55 AM'} ({journey?.totalDistanceKm || 3} km)
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* Active Journey Live Tracker Vehicle */}
+        {activeTripVehicle && (activeRouteFilter === 'active_trip' || activeRouteFilter === 'my_corridor') && (
+          <Marker
+            position={[activeTripVehicle.lat, activeTripVehicle.lng]}
+            icon={createBusIcon(activeTripVehicle, selectedVehicle?.vehicle_id === activeTripVehicle.vehicle_id)}
+            eventHandlers={{
+              click: () => onSelectVehicle(activeTripVehicle)
+            }}
+          >
+            <Popup className="custom-transit-popup">
+              <div className="p-2.5 text-slate-900 min-w-[240px]">
+                <div className="flex items-center justify-between border-b pb-1.5 mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="bg-emerald-600 text-white text-xs font-black px-1.5 py-0.5 rounded">
+                      {activeTripVehicle.route_short_name}
+                    </span>
+                    <span className="font-bold text-slate-800 text-xs">Active Trip Vehicle</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                    Live GPS Tracker
+                  </span>
+                </div>
+                <div className="text-xs text-slate-700 space-y-1 mb-2">
+                  <div><span className="font-semibold">Heading:</span> {destShort}</div>
+                  <div><span className="font-semibold">Next:</span> Approaching terminal stop ({activeTripVehicle.eta_next_stop_min} min)</div>
+                  <div><span className="font-semibold">Distance:</span> {activeTripVehicle.distance_from_user_km} km</div>
+                  <div><span className="font-semibold">Speed:</span> {activeTripVehicle.speed_kmh} km/h</div>
+                </div>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {/* Transit Stops (Filtered cleanly to active route) */}
         {displayedStops.map((stop, idx) => {

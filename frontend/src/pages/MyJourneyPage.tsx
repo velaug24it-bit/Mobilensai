@@ -232,29 +232,47 @@ export const MyJourneyPage: React.FC = () => {
     }, 400);
   };
 
-  // 6. Analyze Real Dynamic Custom Route
-  const handleAnalyze = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingToAtlas(true);
+  // Generate smooth road routing coordinates between two points
+  const generateRouteWaypoints = (orig: { lat: number; lng: number }, dest: { lat: number; lng: number }): [number, number][] => {
+    const steps = 6;
+    const pts: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const curveOffset = Math.sin(t * Math.PI) * 0.0035;
+      const lat = orig.lat + (dest.lat - orig.lat) * t + curveOffset;
+      const lng = orig.lng + (dest.lng - orig.lng) * t - curveOffset * 0.4;
+      pts.push([Number(lat.toFixed(5)), Number(lng.toFixed(5))]);
+    }
+    return pts;
+  };
 
-    // If user kept the exact TCR ➔ FXEC corridor, load curated GTFS model
-    if (
+  // Helper to compile and save current user journey data
+  const buildActiveJourney = async (): Promise<Journey> => {
+    const isTcrDefault = 
       (origin.toLowerCase().includes('thoothukudi') || origin.toLowerCase().includes('airport')) &&
-      (destination.toLowerCase().includes('francis xavier') || destination.toLowerCase().includes('vannarpettai'))
-    ) {
-      await saveCurrentJourneyToAtlas(TCR_TO_FXEC_JOURNEY);
-      setCurrentJourney(TCR_TO_FXEC_JOURNEY);
-      setIsSavingToAtlas(false);
-      setSaveSuccess(true);
-      setTimeout(() => navigate('/analyzer'), 400);
-      return;
+      (destination.toLowerCase().includes('francis xavier') || destination.toLowerCase().includes('vannarpettai'));
+
+    if (isTcrDefault) {
+      const journey: Journey = {
+        ...TCR_TO_FXEC_JOURNEY,
+        originCoords: { lat: 8.7242, lng: 78.0264 },
+        destCoords: { lat: 8.7300, lng: 77.7126 },
+        routeCoordinates: [
+          [8.7242, 78.0264], // TCR Airport
+          [8.7258, 77.9850], // Vagaikulam Stop
+          [8.7275, 77.8820], // Vallanadu
+          [8.7292, 77.7855], // Thamirabarani Bridge
+          [8.7289, 77.7180], // Tirunelveli Junction
+          [8.7300, 77.7126]  // FXEC Campus
+        ]
+      };
+      await saveCurrentJourneyToAtlas(journey);
+      setCurrentJourney(journey);
+      return journey;
     }
 
-    // Dynamic real journey generation based on actual coordinates
     const distKm = getDistanceFromLatLonInKm(originCoords.lat, originCoords.lng, destCoords.lat, destCoords.lng);
     const effectiveDist = Math.max(1.8, distKm);
-
-    // Dynamic timings scaled by climate heat factor
     const heatScale = heatMultiplier > 1.2 ? 1.25 : 1.0;
     const walk1Min = Math.round(7 * heatScale);
     const busMin = Math.max(8, Math.round(effectiveDist * 2.2));
@@ -264,6 +282,16 @@ export const MyJourneyPage: React.FC = () => {
 
     const originName = origin.split(',')[0].trim();
     const destName = destination.split(',')[0].trim();
+    const routeCoords = generateRouteWaypoints(originCoords, destCoords);
+
+    // Compute expected arrival time from departure time
+    const [depHours, depMins] = departureTime.split(':').map(Number);
+    const arrTotalMins = ((depHours || 8) * 60 + (depMins || 15) + totalMin) % 1440;
+    const arrH = Math.floor(arrTotalMins / 60);
+    const arrM = arrTotalMins % 60;
+    const arrPeriod = arrH >= 12 ? 'PM' : 'AM';
+    const arrH12 = arrH % 12 || 12;
+    const arrivalTimeStr = `${String(arrH12).padStart(2, '0')}:${String(arrM).padStart(2, '0')} ${arrPeriod}`;
 
     const dynamicSegments: JourneySegment[] = [
       {
@@ -289,7 +317,7 @@ export const MyJourneyPage: React.FC = () => {
         expectedMinutes: 5,
         excessMinutes: Math.max(0, waitMin - 5),
         frictionContribution: waitMin > 10 ? 'high' : 'moderate',
-        description: `Roadside transit stop headway wait`,
+        description: `Roadside transit stop headway wait at ${originName}`,
         startTime: '08:22 AM',
         endTime: '08:34 AM',
         location: `${originName} Transit Bay`,
@@ -305,7 +333,7 @@ export const MyJourneyPage: React.FC = () => {
         distanceKm: Number(effectiveDist.toFixed(1)),
         costInr: Math.max(15, Math.min(60, Math.round(effectiveDist * 1.2))),
         frictionContribution: 'low',
-        description: `TNSTC Regional Transit service connecting ${originName} to ${destName}`,
+        description: `Regional Express Transit connecting ${originName} to ${destName}`,
         startTime: '08:34 AM',
         endTime: '09:05 AM',
         location: `${originName} ➔ ${destName}`,
@@ -323,7 +351,7 @@ export const MyJourneyPage: React.FC = () => {
         frictionContribution: 'low',
         description: `Walk into ${destName} main entrance`,
         startTime: '09:05 AM',
-        endTime: '09:12 AM',
+        endTime: arrivalTimeStr,
         location: destName,
         stepFree: true
       }
@@ -338,7 +366,7 @@ export const MyJourneyPage: React.FC = () => {
       origin: origin,
       destination: destination,
       departureTime: departureTime,
-      arrivalTime: '09:15 AM',
+      arrivalTime: arrivalTimeStr,
       totalDurationMinutes: totalMin,
       travelDurationMinutes: busMin,
       waitingDurationMinutes: waitMin,
@@ -350,17 +378,38 @@ export const MyJourneyPage: React.FC = () => {
       segments: dynamicSegments,
       frictionBreakdown: model.frictionBreakdown,
       primaryBottleneck: model.primaryBottleneck,
-      simulation: false
+      simulation: false,
+      originCoords: originCoords,
+      destCoords: destCoords,
+      routeCoordinates: routeCoords
     };
 
     await saveCurrentJourneyToAtlas(newJourney);
     setCurrentJourney(newJourney);
+    return newJourney;
+  };
+
+  // 6. Analyze Real Dynamic Custom Route (Deep Forensics)
+  const handleAnalyze = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSavingToAtlas(true);
+    await buildActiveJourney();
     setIsSavingToAtlas(false);
     setSaveSuccess(true);
-
     setTimeout(() => {
       navigate('/analyzer');
-    }, 400);
+    }, 300);
+  };
+
+  // 7. Start Live Journey with this Travel Data
+  const handleStartLiveJourney = async () => {
+    setIsSavingToAtlas(true);
+    await buildActiveJourney();
+    setIsSavingToAtlas(false);
+    setSaveSuccess(true);
+    setTimeout(() => {
+      navigate('/live-journey');
+    }, 300);
   };
 
   // Calculate live road distance for summary display
@@ -677,10 +726,21 @@ export const MyJourneyPage: React.FC = () => {
 
             {/* Actions */}
             <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center gap-3">
+              {/* Start Live Journey Button */}
+              <button
+                type="button"
+                onClick={handleStartLiveJourney}
+                disabled={isSavingToAtlas}
+                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs shadow-xl shadow-emerald-500/25 flex items-center gap-2 transition-all transform hover:scale-105 disabled:opacity-50"
+              >
+                <Radio className="w-4 h-4 animate-pulse text-slate-950" />
+                <span>Start Live Journey (Track Real-Time)</span>
+              </button>
+
               <button
                 type="submit"
                 disabled={isSavingToAtlas}
-                className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-xl shadow-cyan-500/25 flex items-center gap-2 transition-all transform hover:scale-105 disabled:opacity-50"
+                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-2 transition-all disabled:opacity-50"
               >
                 {isSavingToAtlas ? (
                   <>
@@ -689,7 +749,7 @@ export const MyJourneyPage: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-4 h-4" />
+                    <Sparkles className="w-4 h-4 text-cyan-400" />
                     <span>Analyze Journey Friction & Save</span>
                   </>
                 )}
@@ -698,10 +758,10 @@ export const MyJourneyPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleLoadTcrToFxec}
-                className="px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-2 transition-colors"
+                className="px-4 py-3.5 rounded-2xl bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-cyan-300 font-bold text-xs flex items-center gap-1.5 transition-colors"
               >
-                <span>Reset to TCR ➔ FXEC Corridor</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>Reset to TCR ➔ FXEC</span>
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
 
               {/* Crowdsourced Report Trap Button */}
@@ -729,7 +789,7 @@ export const MyJourneyPage: React.FC = () => {
             {saveSuccess && (
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Successfully analyzed and saved to MongoDB Atlas (`Mobilensai.journeys`)!</span>
+                <span>Successfully configured and saved journey route to MongoDB Atlas!</span>
               </div>
             )}
           </form>
@@ -786,14 +846,27 @@ export const MyJourneyPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t border-slate-800 space-y-2">
+          <div className="mt-6 pt-4 border-t border-slate-800 space-y-2.5">
+            {/* Live Journey Direct Button in Metric Card */}
+            <button
+              type="button"
+              onClick={handleStartLiveJourney}
+              disabled={isSavingToAtlas}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs shadow-xl flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] disabled:opacity-50"
+            >
+              <Radio className="w-4 h-4 animate-pulse text-slate-950" />
+              <span>Track in Live Journey Mode</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
             <button
               type="button"
               onClick={handleAnalyze}
-              className="w-full py-3 rounded-xl bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-cyan-300 font-bold text-xs transition-all flex items-center justify-center gap-2"
+              disabled={isSavingToAtlas}
+              className="w-full py-2.5 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-cyan-300 font-bold text-xs transition-colors flex items-center justify-center gap-2"
             >
               <span>Analyze in Deep Forensics</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
             </button>
           </div>
         </div>

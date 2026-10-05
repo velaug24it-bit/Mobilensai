@@ -78,12 +78,34 @@ function crowdingPct(level: string) {
 
 export const LiveJourneyPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentLocation, role, currentUser, departureHour, ambientTempCelsius, heatStressLevel, heatMultiplier } = useApp();
+  const { 
+    currentLocation, 
+    role, 
+    currentUser, 
+    departureHour, 
+    ambientTempCelsius, 
+    heatStressLevel, 
+    heatMultiplier,
+    currentJourney 
+  } = useApp();
   
   // Live clock
   const [now, setNow] = useState(new Date());
   const [elapsedSec, setElapsedSec] = useState(0);
   const startTimeRef = useRef(Date.now());
+
+  // Active Journey Origin / Destination resolution
+  const hasCustomJourney = Boolean(currentJourney && currentJourney.origin && currentJourney.destination);
+
+  const activeOriginName = currentJourney?.origin || (
+    currentLocation?.city?.toLowerCase().includes('tirunelveli') || currentUser?.district?.toLowerCase().includes('tirunelveli')
+      ? 'Tirunelveli Departure' 
+      : 'Thoothukudi Airport (TCR) Origin'
+  );
+
+  const activeDestName = currentJourney?.destination || 'Francis Xavier Engineering College (FXEC)';
+  const originShort = activeOriginName.split(',')[0].trim();
+  const destShort = activeDestName.split(',')[0].trim();
 
   // Transit Data
   const [vehicles, setVehicles] = useState<TransitVehicle[]>(INITIAL_VEHICLES);
@@ -101,7 +123,7 @@ export const LiveJourneyPage: React.FC = () => {
   
   // Journey Simulation Metrics
   const [journeyStatus, setJourneyStatus] = useState<'on_schedule' | 'tight' | 'disrupted'>('on_schedule');
-  const [frictionScore, setFrictionScore] = useState<number>(31);
+  const [frictionScore, setFrictionScore] = useState<number>(currentJourney?.overallFrictionScore ?? 31);
   const [transferRisk, setTransferRisk] = useState<'Low' | 'Moderate' | 'High'>('Low');
   const [simulatedDelay, setSimulatedDelay] = useState<number>(0);
   const [recoveryAlternatives, setRecoveryAlternatives] = useState<RecoveryAlternative[]>([]);
@@ -116,25 +138,25 @@ export const LiveJourneyPage: React.FC = () => {
 
   const pollingRef = useRef<any>(null);
 
-  const userLat = currentLocation?.lat || 8.723;
-  const userLng = currentLocation?.lng || 78.026;
+  const userLat = currentJourney?.originCoords?.lat ?? (currentLocation?.lat || 8.723);
+  const userLng = currentJourney?.originCoords?.lng ?? (currentLocation?.lng || 78.026);
   const userLocationObj = {
     lat: userLat,
     lng: userLng,
-    label: currentLocation?.city?.toLowerCase().includes('tirunelveli') || currentUser?.district?.toLowerCase().includes('tirunelveli')
-      ? 'Tirunelveli Departure' 
-      : 'Thoothukudi Airport (TCR) Origin'
+    label: originShort
   };
 
-  // Derived metrics
-  const walkMeters = 520;
-  const walkMinutes = Math.ceil(walkMeters / 80);
+  // Derived metrics from currentJourney or live vehicle
+  const walkMeters = currentJourney?.totalWalkingMinutes ? currentJourney.totalWalkingMinutes * 80 : 520;
+  const walkMinutes = currentJourney?.totalWalkingMinutes ? currentJourney.totalWalkingMinutes : Math.ceil(walkMeters / 80);
   const busEta = selectedVehicle?.eta_next_stop_min ?? 4;
-  const distanceKm = selectedVehicle?.distance_from_user_km ?? 1.8;
+  const distanceKm = currentJourney?.totalDistanceKm ? currentJourney.totalDistanceKm : (selectedVehicle?.distance_from_user_km ?? 1.8);
   const speedKmh = selectedVehicle?.speed_kmh ?? 42;
   const crowding = selectedVehicle?.crowding_level ?? 'Moderate';
   const isDelayed = simulatedDelay > 0 || journeyStatus === 'disrupted';
-  const expectedArrival = isDelayed ? '09:07 AM (Delayed)' : '08:54 AM';
+  const expectedArrival = currentJourney?.arrivalTime
+    ? (isDelayed ? `${currentJourney.arrivalTime} (+${simulatedDelay}m Late)` : currentJourney.arrivalTime)
+    : (isDelayed ? '09:07 AM (Delayed)' : '08:54 AM');
 
   // Friction breakdown - use iconKey (lucide), NOT emoji strings (encoding corruption risk)
   const frictionBreakdown = [
@@ -241,7 +263,7 @@ export const LiveJourneyPage: React.FC = () => {
     const recalc = await recalculateDisruptedJourney({
       current_bus_id: targetVehicleId,
       current_delay_min: delayAmt,
-      destination: 'Francis Xavier Engineering College (FXEC)'
+      destination: activeDestName
     });
     if (recalc?.recovery_alternatives) setRecoveryAlternatives(recalc.recovery_alternatives);
     const bundle = await fetchLiveTransit();
@@ -253,7 +275,7 @@ export const LiveJourneyPage: React.FC = () => {
     setSimulatedDelay(0);
     setJourneyStatus('on_schedule');
     setTransferRisk('Low');
-    setFrictionScore(31);
+    setFrictionScore(currentJourney?.overallFrictionScore ?? 31);
     setRecoveryAlternatives([]);
     const bundle = await fetchLiveTransit();
     if (bundle?.vehicles) {
@@ -288,17 +310,31 @@ export const LiveJourneyPage: React.FC = () => {
       <div className={`flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl border shadow-xl transition-all duration-500 ${
         isDelayed 
           ? 'bg-gradient-to-r from-rose-950/60 via-slate-900 to-rose-950/40 border-rose-500/60 shadow-rose-950/30' 
+          : hasCustomJourney
+          ? 'bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 border-emerald-500/40 shadow-emerald-950/20'
           : 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-cyan-500/30'
       }`}>
         <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-xl border ${isDelayed ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' : 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400'}`}>
+          <div className={`p-2.5 rounded-xl border ${
+            isDelayed 
+              ? 'bg-rose-500/20 border-rose-500/40 text-rose-400' 
+              : hasCustomJourney
+              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+              : 'bg-cyan-500/20 border-cyan-500/30 text-cyan-400'
+          }`}>
             <Radio className="w-6 h-6 animate-pulse" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-black text-white tracking-tight">Live Journey Mode</h1>
-              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${isDelayed ? 'bg-rose-500 text-white' : 'bg-amber-400 text-slate-950'}`}>
-                {isDelayed ? 'DISRUPTED' : 'DEMO'}
+              <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                isDelayed 
+                  ? 'bg-rose-500 text-white' 
+                  : hasCustomJourney
+                  ? 'bg-emerald-400 text-slate-950'
+                  : 'bg-amber-400 text-slate-950'
+              }`}>
+                {isDelayed ? 'DISRUPTED' : hasCustomJourney ? 'LIVE COMMUTE' : 'DEMO'}
               </span>
               {/* Live Clock */}
               <span className="text-xs font-mono text-cyan-300 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 flex items-center gap-1.5">
@@ -310,15 +346,31 @@ export const LiveJourneyPage: React.FC = () => {
                 {elapsedStr} elapsed
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-              <span>{selectedStop?.stop_name || 'Vagaikulam NH-138 Junction'}</span>
-              <span className="text-cyan-400 font-bold">&rarr;</span>
-              <span>Francis Xavier Engineering College</span>
-            </p>
+            <div className="flex items-center gap-2 flex-wrap mt-1 text-xs">
+              <p className="text-slate-300 flex items-center gap-1.5">
+                <span className="font-bold text-white">{originShort}</span>
+                <span className="text-cyan-400 font-bold">&rarr;</span>
+                <span className="font-bold text-white">{destShort}</span>
+              </p>
+              {hasCustomJourney && (
+                <span className="text-[10px] text-emerald-300 bg-emerald-950/80 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                  {distanceKm} km • Est. {expectedArrival}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Edit / Change Journey Route button */}
+          <button
+            onClick={() => navigate('/my-journey')}
+            className="bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 border border-slate-700 shadow-md transition-colors"
+            title="Modify route or select another destination"
+          >
+            <span>✏️ Change Route</span>
+          </button>
+
           {/* Journey Essentials Quick Access */}
           <button
             onClick={() => setIsEssentialsDrawerOpen(true)}
@@ -681,6 +733,7 @@ export const LiveJourneyPage: React.FC = () => {
             selectedVehicle={selectedVehicle}
             selectedStop={selectedStop}
             userLocation={userLocationObj}
+            journey={currentJourney}
             onSelectVehicle={handleSelectVehicle}
             onSelectStop={handleSelectStop}
             onCheckCatchability={handleCheckCatchability}
@@ -779,10 +832,10 @@ export const LiveJourneyPage: React.FC = () => {
 
           <LiveJourneyTimeline
             currentStage={currentStage}
-            originName={userLocationObj.label}
+            originName={activeOriginName}
             busStopName={selectedStop ? selectedStop.stop_name : 'Boarding Stop'}
             vehicle={selectedVehicle}
-            destinationName="Francis Xavier Engineering College (FXEC)"
+            destinationName={activeDestName}
             isDelayed={simulatedDelay > 0}
             delayMinutes={simulatedDelay}
             transferRiskLevel={transferRisk}

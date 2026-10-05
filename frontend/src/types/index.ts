@@ -60,6 +60,12 @@ export interface Journey {
   frictionBreakdown: FrictionBreakdown;
   primaryBottleneck: PrimaryBottleneck;
   simulation: boolean;
+  originCoords?: { lat: number; lng: number };
+  destCoords?: { lat: number; lng: number };
+  routeCoordinates?: [number, number][];
+  totalDistanceKm?: number;
+  totalWalkingMinutes?: number;
+  overallFrictionScore?: number;
 }
 
 export interface InterventionOption {
